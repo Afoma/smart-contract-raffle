@@ -64,7 +64,7 @@ contract Raffle is VRFConsumerBaseV2Plus{
     address payable[] private s_players;
     uint256 private s_lastTimeStamp;
     address private s_recentWinner;
-    RaffleState private s_raffleState;
+    RaffleState private s_raffleState;  // start as open
 
     /** Events **/
 
@@ -134,7 +134,7 @@ contract Raffle is VRFConsumerBaseV2Plus{
         VRFV2PlusClient.RandomWordsRequest memory request = VRFV2PlusClient.RandomWordsRequest({
             keyHash: i_keyHash,
             subId: i_subscriptionId,
-            requestConfir ctions: REQUEST_CONFIRMATIONS,
+            requestConfirmations: REQUEST_CONFIRMATIONS,
             callbackGasLimit: i_callbackGasLimit,
             numWords: NUM_WORDS,
             extraArgs: VRFV2PlusClient._argsToBytes(
@@ -167,5 +167,10 @@ contract Raffle is VRFConsumerBaseV2Plus{
     function getEntranceFee() external view returns(uint256){
         return i_entranceFee;
     }
-
+    function getRaffleState() external view returns(RaffleState){
+        return s_raffleState;
+    }
+    function getPlayer(uint256 indexOfPlayer) external view returns (address){
+        return s_players[indexOfPlayer];
+    }
 }
