@@ -113,5 +113,252 @@ A VRF request begins when the consumer calls the Coordinator's `requestRandomWor
 
 Conceptually:
 
-`uint256 requestId = 
-  
+`uint256 requestId = s_vrfCoordinator.requestRandomWords(request);`
+
+The function sends a request to the VRF Coordinator and returns a `requestId`. This ID uniquely identifies that randomness request, allowing the fulfillment to be associated with the original request.
+
+For example, if the Coordinator returns:
+
+requestId = 123
+
+you can think of the `123` as a tracking ID for that particular VRF request.
+
+It is important to know that `requestRandomWords` does not return the random value itself. It only starts the request and returns the request ID.
+
+The request is submitted as part of an on-chain transaction. Once that transaction completes, the consumer contract does not continue waiting for the random value. The VRF request is processed separately, and the result is delivered later through the fulfillment process.
+
+This gives VRF its asynchronous request-and-fulfillment model:
+
+Request transaction
+
+Consumer
+    |
+    | 
+    v
+requestRandomWords()
+    |
+    |
+    v
+VRF Coordinator
+    |
+    |
+    v
+requestId = 123
+
+          ... later...
+
+Fulfillment transaction
+
+VRF Coordinator
+    |
+    v
+rawFulfillRandomWords()
+    |
+    v
+fulfillRandomWOrds()
+
+`requestRandomWOrds() starts the randomness request; it does not return the randomness itself.
+
+
+### 1.3 Fulfilling the randomness request
+
+Calling `requestRandomWords()` only starts the randomness request. The random values are not returned to the consumer contract in the same transaction. Instead, the request is fulfilled later.
+
+Once the VRF request has been processed, the fulfillment is sent back through the VRF Coordinator to the consumer contract.
+
+The important part of this process is the callback:
+
+VRF Coordinator
+      |
+      |    fulfillment
+      v
+rawFulfillRandomWords()
+      |
+      |
+      v
+fulfillRandomWOrds()
+      |
+      |
+      v
+Consumer's application logic
+
+The function `rawFulfillRandomWOrds()` is the entry point used to deliver the VRF result to your consumer contract. It is provided by `VRFConsumerBaseV2Plus` which our Raffle contract inherits:
+
+` contract Raffle is VRFConsumerBaseV2Plus { `
+
+This is why `rawFulfillRandomWords()` does not appear in `Raffle.sol` : it comes from the inherited Chainlink base contract.
+
+After the fulfillment enters through `rawFulfillRandomWords()`, the randomness is passed to the consumer's `fulfillRandomWords` function:
+
+```
+function fulfillRandomWords(
+    uint256 /*requestId*/,
+    uint256[] calldata randomWords
+) internal override {
+    // Application-specific logic
+}
+```
+
+In other words, the fulfillment process can be summarized as:
+
+requestRandomWords()
+      |
+      |    request
+      v
+VRF Coordinator
+      |
+      |    process request
+      v
+Chainlink VRF infrastructure
+      |
+      |    randomness + proof
+      v
+VRF Coordinator
+      |
+      |    callback
+      v
+rawFulfillRandomWords()
+      |
+      |
+      v
+fulfillRandomWords()
+
+The consumer contract therefore does not need to repeatedly ask whether the randomness is ready. It simply defines what should happen when the VRF Coordinator fulfills the request.
+
+This is the key idea behind the asynchronous VRF model:
+
+The consumer requests randomness first, and Chainlink later calls the consumer to deliver the result.
+
+### 1.4 Why are there two fulfillment functions?
+
+At first glance, having both `rawFulfillRandomWords()` and `fulfillRandomWords()` may seem redundant but they serve different purposes.
+
+Our Raffle contract implements:
+
+```
+function fulfillRandomWords(
+    uint256 /*requestId*/,
+    uint256[] calldata randomWords
+) internal override {
+    // Application-specific logic
+}
+```
+
+The function `rawFulfillRandomWords()` is different: you do not implement it in `Raffle.sol`. It is inherited from `VRFConsumerBaseV2Plus`.
+
+The fulfillment flow is therefore:
+
+VRF Coordinator
+      |
+      |    calls
+      v
+rawFulfillRandomWords()
+      |
+      |    validates the caller
+      v
+fulfillRandomWords()
+      |
+      v
+Your application logic
+
+`rawFulfillRandomWords()`: the entry point
+
+The VRF Coordinator needs an externally callable function through which it can deliver the randomness to your consumer contract.
+
+`VRFConsumerBaseV2Plus` provides that entry point.
+
+Before forwarding the result, the base contract verifies that the call came from the configured VRF Coordinator. This prevent an arbitrary account or contract from calling the fulfillment functino with a fabricated random value.
+
+You can think of `rawFulfillRandomWords()` as the gateway into the consumer's fulfillment logic:
+
+VRF Coordinator
+      |
+      |    "Here is the result for request X."
+      v
+rawFulfillRandomWords()
+      |
+      |    "Is this the authorised Coordinator?"
+     Yes
+      |
+      v
+fulfillRandomWords()
+
+`fulfillRandomWords()`: **the application hook**
+
+Once the caller has been validated, the randomness is passed to the `fulfillRandomWords()` function that you implement in your consumer contract.
+
+This is where our application decides what to do with the returned random values.
+
+In the Raffle contract, the random value is used to select a player:
+
+```
+uint256 indexOfWinner = randomWords[0] % s_players.length;
+address payable recentWinner = s_players[indexOfWinner];
+```
+Chainlinks provides the random value. The Raffle contract provides teh logic that interpretsthe the value.
+
+This separation keeps the Chainlink fulfillment mechanism separate from the application's business logic:
+
+Chainlink-provided logic
+        |
+        |    receive + validate fulfillment
+        v
+rawFulfillRandomWords()
+        |
+        |    forward randomness
+        v
+  Our App's Logic
+        |
+        |
+        v
+fulfillRandomWords()
+        |
+        |    use randomWords
+        v
+  Select winner
+
+  **Why is `fulfillRandomWords()` `internl`? **
+
+  In the Raffle contract, `fulfillRandomWords()` is declared as:
+
+  internal override
+
+  The `internal` visibility means it is not exposed as a function that arbitrary external accounts can call directly. Instead, it is reached through the fulfillment mechanism provided by the inherited `VRFConsumerBaseV2Plus` contract.
+
+The `override` keyword indicates that the Raffle contract is providing its implementation of the fulfillment function defined by the Chainlink base contract.
+
+The result is a two-layer design:
+
+External fulfillment
+        |
+        v
+rawFulfillRandomWords()
+        |
+        v
+caller validation
+        |
+        v
+fulfillRandomWords()
+        |
+        v
+application-specific-logic
+
+This distinction is useful to remember:
+
+**`rawFulfillRandomWords()` is the Chainlink-facing entry point. `fulfillRandomWords()` is where our application handles the randomness.**
+
+### 1.5 Using the random values
+
+Once te `fulfillRandomWords()` receives the random values, the consumer contract can use them for its application logic.
+
+In the Raffle contract, the returned values is used to select a winner:
+
+```
+uint256 indexOfWinner = randomWords[0] % s_players.length;
+address payable recentWinner = s_players[indexOfWinner];
+```
+To understand this code, first look at what `randomWords` contains.
+The `randomWords` parameter is an array of random values returned by Chainlink. In this example, the Raffle requests only one random value:\
+
+uint32 private constant NUM_WORDS = 1;
+
