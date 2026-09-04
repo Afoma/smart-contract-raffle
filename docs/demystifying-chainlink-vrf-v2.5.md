@@ -323,7 +323,7 @@ fulfillRandomWords()
 
   internal override
 
-  The `internal` visibility means it is not exposed as a function that arbitrary external accounts can call directly. Instead, it is reached through the fulfillment mechanism provided by the inherited `VRFConsumerBaseV2Plus` contract.
+The `internal` visibility means it is not exposed as a function that arbitrary external accounts can call directly. Instead, it is reached through the fulfillment mechanism provided by the inherited `VRFConsumerBaseV2Plus` contract.
 
 The `override` keyword indicates that the Raffle contract is providing its implementation of the fulfillment function defined by the Chainlink base contract.
 
@@ -358,7 +358,170 @@ uint256 indexOfWinner = randomWords[0] % s_players.length;
 address payable recentWinner = s_players[indexOfWinner];
 ```
 To understand this code, first look at what `randomWords` contains.
-The `randomWords` parameter is an array of random values returned by Chainlink. In this example, the Raffle requests only one random value:\
+The `randomWords` parameter is an array of random values returned by Chainlink. In this example, the Raffle requests only one random value:
 
 uint32 private constant NUM_WORDS = 1;
 
+Therefore, the array contains one value, which is accessed with:
+
+`randomWords[0]`
+
+For example, imagine CHainlink returns:
+
+randomWords = [424801659762674...]
+
+Suppose there are four players:
+
+s_players[0] -> Alice
+s_players[1] -> Bob
+s_players[2] -> Carol
+s_players[3] -> Dave
+
+The contract uses the modulo (%) operator:
+
+`randomWords[0] % s_players.length
+
+Since `s_players.length` is 4, the result must be one of:
+0
+1
+2
+3
+
+For example:
+
+424801659762674... % 4
+      |
+      v
+The contract can then use that result as an array index:
+`s_playes[1|`
+
+which corresponds to Bob in this example.
+
+The important distinction is that **Chainlink provides the random value, but the Raffle clntract decides how to use it.**
+
+Chainlink does not know that the random value will be used to selct a raflle winnner. It simply fulfills the request with the requested random values. The consumer contract applies its own application logic to those values.
+
+The complete flow is therefore:
+
+Chainlink VRF
+      |    randomWords[0]
+      v
+fulfillRandomWords()
+      |    randomWords[0] % s_players.length
+      v
+winner index
+      |
+      v
+s_players[winner index]
+      |
+      v
+    winner
+
+In the Raffle contract, selecting the winner is only one part of `fulfillRandomWOrds()`. The function also updates the raffle state, clears the player list, records the winner, updates the timestamp, and transfers teh contract balance to the selected winner.
+
+### The complete VRF lifecycle
+
+At this point, we can put the individual pieces together.
+
+In this Raffle contract, Chainlink Automation determines when the raffle shold run. Once the upkeep conditions are met, Automation calls `performUpkeep()`. The Raffle then requests randomness from the VRF Coordinator.
+
+The complete flow looks like this:
+
+Chainlink Automation
+        |
+        |    checks the upkeep conditions
+        v
+  checkUpkeep()
+        |
+        |    returns true
+        v
+  performUpkeep()
+        |
+        |    requestRandomWords()
+        v
+  VRF Coordinator
+        |
+        |     VRF request 
+        v
+Chainlink VRF Infrastructure
+        |
+        |    random values + cryptographic proof
+        v
+  VRF Coordinatore
+        |
+        |    callback
+        v
+rawFulfillRandomWords()
+        |
+        |    validates the caller
+        v
+fulfillRandomWords()
+        |
+        |    application logic
+        v
+  Select winner
+
+Each stage has a different responsibility.
+
+`checkUpkeep()` determines whether the raffle is ready to run. `performUpkeep()` starts the raffle and submits the VRF request. The VRF Coordinator coordinates the request and fulfillment, while the Chainlink VRF infrastructure produces the verifiable randomness.
+
+When the result is ready, the Coordinator calls the consumer's fulfillment entry point. `rawFulfillRandomWords()` validates that the fulfillment came from the expected Coordinator and then passes the random values to the `fulfillRandomWords()` function implemented by the consumer.
+
+Finally, `fulfillRandomWords()` applies the randomness to teh application's logic. In this Raffle, that means converting the random value into a valid player index and selecting the winner.
+
+The important point is that these functions are **not all executed in one transaction.** The process is asynchronous.
+
+Transaction 1
+-----------------------------------
+performUpkeep()
+      |
+      v
+requestRandomWords()
+      |
+      v
+Request submitted
+-----------------------------------
+
+... VRF processing ...
+
+Transaction 2
+-----------------------------------
+Coordinator
+      |
+      v
+rawFulfillRandomWords()
+      |
+      v
+fulfillRandomWords()
+      |
+      v
+Winner selected
+------------------------------------
+
+This separation is fundamental to understanding Chainlink VRF. The consumer does not call `requestRandomWords()` and immediately receives a random value. It submits a request and waits for the VRF fulfillment to arrive later.
+
+### 2. Understanding the VRF v2.5 Request
+
+Now that we understand the request-and-fulfillment lifecycle, we can look more closely at what a VRF v2.5 request contains.
+
+In the Raffle contract, the request is constructed in `performUpkeep()`:
+
+```
+        VRFV2PlusClient.RandomWordsRequest memory request =               VRFV2PlusClient.RandomWordsRequest
+        ({
+            keyHash: i_keyHash,
+            subId: i_subscriptionId,
+            requestConfirmations: REQUEST_CONFIRMATIONS,
+            callbackGasLimit: i_callbackGasLimit,
+            numWords: NUM_WORDS,
+            extraArgs: VRFV2PlusClient._argsToBytes(
+                // Set nativePayment to true to pay for VRF requests with Sepolia ETH instead of LINK
+                VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
+            )
+        });
+```
+The request is then passed to the Coordinator:
+
+`s_vrfCoordinator.requestRandomWords(request);`
+
+The `RandomWordsRequest` struct bundles the information the Coordinator needs to process the request. In VRF v2.5, the request includes parameters for the VRF configuration, billing, the number of random values requested, and the gas available for fulfillment.
