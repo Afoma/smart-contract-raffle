@@ -419,7 +419,7 @@ s_players[winner index]
 
 In the Raffle contract, selecting the winner is only one part of `fulfillRandomWOrds()`. The function also updates the raffle state, clears the player list, records the winner, updates the timestamp, and transfers teh contract balance to the selected winner.
 
-### The complete VRF lifecycle
+### 1.6 The complete VRF lifecycle
 
 At this point, we can put the individual pieces together.
 
@@ -500,7 +500,7 @@ Winner selected
 
 This separation is fundamental to understanding Chainlink VRF. The consumer does not call `requestRandomWords()` and immediately receives a random value. It submits a request and waits for the VRF fulfillment to arrive later.
 
-### 2. Understanding the VRF v2.5 Request
+## 2. Understanding the VRF v2.5 Request
 
 Now that we understand the request-and-fulfillment lifecycle, we can look more closely at what a VRF v2.5 request contains.
 
@@ -609,3 +609,49 @@ The final field is:
 ```
 
 This is where VRF v2.5 introduces additional request configuration. 
+
+`extraArgs` lets us include additional options with our VRF request. In this example, `nativePayment` determines whether the request is paid for with the chain's native token or with LINK.
+
+Here it is set to:
+
+nativePayment: false
+
+so this request is configured for LINK payment.
+
+#### Putting the request together
+
+The important thing to understand is that `RandomWordsRequest` is **not the rnadom nunber.**
+
+It is a description of what the consumer is asking the VRF Coordinator to do.
+
+RandomWordsRequest
+|
+|-  keyHash
+|      ->  VRF configuration
+|
+|-  subId
+|      ->  subscription
+|
+|-  requestConfirmations
+|      ->  confirmation requirement
+|
+|-  callbackGasLimit
+|      ->  gas available for fulfillment
+|
+|-  numWords
+|      ->  number of random values requested
+|
+|_  extraArgs
+        ->  additional request configuration
+
+Once this struct has been constructed, the consumer sends it to:
+
+s_vrfCoordinator.requestRandomWords(request);
+
+The Coordinator then receives the request and returns a `requestId`.
+
+The important distinction is:
+
+RandomWordsRequest means "what randomness do I need, and how should the request be handled?"
+requestId means "Which request is this?"
+The request parameters describe the request. The `requestId` identifies the individual request.
