@@ -525,3 +525,87 @@ The request is then passed to the Coordinator:
 `s_vrfCoordinator.requestRandomWords(request);`
 
 The `RandomWordsRequest` struct bundles the information the Coordinator needs to process the request. In VRF v2.5, the request includes parameters for the VRF configuration, billing, the number of random values requested, and the gas available for fulfillment.
+
+Let's look at each field.
+
+`keyHash`
+
+Let keyHash: i_keyHash
+
+The `keyHash` identifies the VRF key and configuration used for the request. In the Raffle contract, it is stored as:
+
+bytes32 private immutable i_keyHash;
+
+The value is supplied when the contract is deployed. You can think of the `keyHash` as selecting which VRF configuration should be used to fulfill teh request.
+
+`subId`
+
+subId: i_subscriptionId
+
+`subId` identifies the VRF subscription that is associated with the request.
+
+The subscription is used to manage the resources used by VRF requests. Your consumer therefore supplies the subscription ID when requesting randomness.
+
+In the contract, it is stored as:
+
+uint256 private immutable i_subscriptionId;
+
+`requestConfirmations`
+
+requestConfirmations: REQUEST_CONFIRMATIONS
+
+This specifies how many block confirmations the request should wait for before the VRF response is generated.
+
+Your contract sets:
+
+uin256 private constant REQUEST_CONFIRMATIONS = 3;
+
+The important concept is that the request is not necessarily fulfilled immediately after it is submitted. The configured confirmation count is part of the request's fulfillment conditions.
+
+`callbackGasLimit`
+
+callbackGasLimit: i_callbackGasLimit
+
+When the VRF result is delivered, the Coordinator must execute the consumer's fulfillment logic.
+
+That execution consumes gas.
+
+`callbackGasLimit` specifies the gas limit available for that callback.
+
+In your consumer:
+
+uint32 private immutable i_callbackGasLimit;
+
+The value should be large enough for the logic executed during fulfillment.
+
+`numWords`
+
+numWords: NUM_WORDS
+
+This specifies how many random values the consumer wants.
+
+Our contract requests one:
+
+uin32 private constant NUM_WORDS = 1;
+
+The returned values are provided to `fulfillRandomWOrds()` as an array:
+
+uint256[] calldata randomWords
+
+Because this consumer requests one word, the application reads:
+
+randomWords[0]
+
+`extraArgs`
+
+The final field is:
+
+``` 
+    extraArgs: VRFV2PlusClient._argsToBytes(
+        VRFV2PlusClient.ExtraArgsV1 ({
+            nativePayment: false
+        })
+    )
+```
+
+This is where VRF v2.5 introduces additional request configuration. 
