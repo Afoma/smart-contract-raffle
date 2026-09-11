@@ -905,4 +905,43 @@ The answer becomes clearer when we look at the two functions separately.
 
 The `Raffle` contract does not implement this function itself.
 
-Instead, `VRFConsumerBaseV2Plus` provides the external entry point (`rawFulfillRandomWords()`) that receives the VRF response from the Coordinator. It validates that the response comes from the configured Coordinator before forwarding the random values to fulfillRandomWords().
+Instead, `VRFConsumerBaseV2Plus` provides the external entry point (`rawFulfillRandomWords()`) that receives the VRF response from the Coordinator. It validates that the response comes from the configured Coordinator before forwarding the random values to `fulfillRandomWords()`.
+
+The important point is that rawFulfillRandomWords() acts as the boundary between the Chainlink VRF mechanism and the consumer contract's application logic.
+
+It also provides an important security check: the fulfillment must come from the configured VRF Coordinator.
+
+### `fulfillRandomWords()`: the application callback
+
+The function that the Raffle contract actually implements is:
+
+```
+    function fulfillRandomWords(uint256 /*requestId*/, uint256[] calldata randomWords) internal
+    override {
+ 
+        uint256 indexOfWinner = randomWords[0] % s_players.length;
+        address payable recentWinner =  s_players[indexOfWinner];
+        s_recentWinner = recentWinner;
+        s_raffleState = RaffleState.OPEN;
+        s_players = new address payable[](0);
+        s_lastTimeStamp = block.timestamp;
+        emit WinnerPicked(s_recentWinner);
+
+        (bool success,) = recentWinner.call{value: address(this).balance}("");
+        if (!success){
+            revert Raffle__TransferFailed();
+        }
+    }
+```
+
+This is where the application decides what to do with the random values.
+
+The function is marked: 
+
+internal override
+
+`override` tells Solidity that the function implements a function defined by the inherited VRF consumer base.
+
+`internal` means it is intended to be called from within the contract's inheritance hierarchy rather than being an externally callable entry point.
+
+This is why the consumer does not simply expose `fulfillRandomWords()` as a public function for anyone to call.
