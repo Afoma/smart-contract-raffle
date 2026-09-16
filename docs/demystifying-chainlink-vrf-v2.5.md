@@ -911,7 +911,7 @@ The important point is that rawFulfillRandomWords() acts as the boundary between
 
 It also provides an important security check: the fulfillment must come from the configured VRF Coordinator.
 
-### `fulfillRandomWords()`: the application callback
+### 4.2 `fulfillRandomWords()`: the application callback
 
 The function that the Raffle contract actually implements is:
 
@@ -945,3 +945,142 @@ internal override
 `internal` means it is intended to be called from within the contract's inheritance hierarchy rather than being an externally callable entry point.
 
 This is why the consumer does not simply expose `fulfillRandomWords()` as a public function for anyone to call.
+
+### 4.3 Why have two functions?
+
+The two functions have different responsibilities.
+
+`rawFulfillRandomWords()` is part of the **VRF integration layer.** It receives the response / fulfillment from the Coordinator and validates before forwarding / routing the values.
+`fulfillRandomWords()` is part of the **consumer's application layer.** It tells the application what to do with those values.
+
+This separation can be visualised as:
+
+CHAINLINK VRF infrastructure
+      |
+      V
+VRF Coordinator
+      |    calls
+      V
+rawFulfillRandomWords() [provided by the inherited base contract (VRFConsumerBaseV2Plus)
+      |
+      V
+fulfillRandomWords() [implemented by Raffle]
+      |
+      V
+Our application logic
+
+This design prevents the application-specific callback from also having to implement the Coordinator authentication and fulfillment-entry logic itself.
+
+### 4.4 Following the random value into the application
+
+Once `fulfillRandomWords()` receives the response, the contract can use the random values however its application requires.
+
+In this example, the first random word is used to calculate an array index:
+
+uint256 indexOfWinner = randomWords[0] % s_players.length;
+
+The important distinction is that Chainlink provides the random value, not the application-specific meaning of that value.
+
+The VRF system does not decide which array element should be selected. The consumer contract takes the returned random value and applies its own logic.
+
+This gives us the complete fulfillment path:
+
+VRF Coordinator
+      |
+      |  delivers random values
+      V
+rawFulfillRandomWords()
+      |
+      |  validates and forwards
+      V
+fulfillRandomWords()
+      |
+      |  application interprets
+      V
+randomWords[0]
+      |
+      |
+      V
+Application Logic
+
+## 5. The Complete VRF Lifecycle
+
+We can now put the pieces together and trace a complete VRF request from start to finish. 
+
+The process begins when the consumer contract becomes eligible for an upkeep. In this project, `checkUpkeep()` determines whether the conditions for the upkeep have been met.
+
+If those conditions are satisfied, `performUpkeep()` is called: 
+
+```
+function performUpkeep(bytes calldata /* performData */) external {
+    (bool upkeepNeeded,) = checkUpkeep("");
+
+    if (!upkeepNeeded) {
+        revert Raffle__UpkeepNotNeeded(
+            address(this).balance,
+            s_players.length,
+            uint256(s_raffleState)
+        );
+    }
+
+    s_raffleState = RaffleState.CALCULATING;
+
+    // Build the VRF request...
+
+    s_vrfCoordinator.requestRandomWords(request);
+}
+```
+
+the most important part ofr VRF is the final call:
+
+`s_vrfCoordinator.requestRandomWords(request);`
+
+At this point, the consumer contract has sent its request to the VRF Coordinator. 
+
+The complete flow is:
+
+Automation
+    |
+    |  calls
+    V
+checkUpkeep()
+    |
+    |  upkeep is needed
+    V
+performUpkeep()
+    |
+    |  requestRandomWords(request)
+    V
+VRF Coordinator
+    |
+    |  processes the request
+    V  
+Chainlink VRF infrastructure
+    |
+    |  produces verifiable randomness
+    V
+VRF Coordinator
+    |
+    |  fulfills the request
+    V
+rawFulfillRandomWords()
+    |
+    |  validates and forwards
+    V
+fulfillRandomWords()
+    |
+    |  application-specific logic
+    V
+randomWords[0]
+
+### Request amd fulifllment are separate transactions
+
+One of the most important concepts to understand is that requesting randomness and receiving randomness do not happen in the same transaction.
+
+The request transaction calls:
+
+`s_vrfCoordinator.requestRandomWords(request);`
+
+That submits the request to the Coordinator. The random values are delivered later through the fulfillment flow. This means the consumer contract must be designed around an **asynchronous workflow:**
+
+The contract therefore cannot request randomness and immediately expect randomWords to be available in the same function call.
