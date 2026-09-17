@@ -1073,7 +1073,7 @@ fulfillRandomWords()
     V
 randomWords[0]
 
-### Request amd fulifllment are separate transactions
+### 5.1 Request amd fulifllment are separate transactions
 
 One of the most important concepts to understand is that requesting randomness and receiving randomness do not happen in the same transaction.
 
@@ -1083,4 +1083,81 @@ The request transaction calls:
 
 That submits the request to the Coordinator. The random values are delivered later through the fulfillment flow. This means the consumer contract must be designed around an **asynchronous workflow:**
 
-The contract therefore cannot request randomness and immediately expect randomWords to be available in the same function call.
+The contract therefore cannot request randomness and immediately expect `randomWords` to be available in the same function call.
+
+### 5.2 The roles of each component
+
+Raffle -> Requests randomness and defines what to do with the result
+
+Automation -> Determines when `performUpkeep()` should be executed
+
+VRF Coordinator -> Receives requests and coordinates the on-chain VRF workflow
+
+Chainlink VRF infrastructure -> Produces the verifiable randomness
+
+VRFConsumerBaseV2Plus -> Provides the fulfillment entry point and Coordinator validation
+
+`fulfillRandomWords()` -> Applies the random values to the consumer's application logic
+
+This separation is useful because it shows that VRF is not a single function call that magically returns a random number.
+
+It is a sequence of interactions between the consumer contract, the Coordinator, Chainlink's VRF infrastructure, and the consumer's fulfillment logic. 
+
+### 5.3 The key idea
+
+The request travels from the consumer to the Coordinator, while the randomness response travels back from the Coordinator to the consumer.
+
+Note: The VRF Coordinator fulfills the request by calling `rawFulfillRandomWords()` on the consumer contract.
+
+The Chainlink infrastructure generates the randomnes and sends it to the Coordinator, which then sends it to the consumer contract for use.
+
+## 6. Key Takeaways
+
+Chainlink VRF v2.5 may seem complicated at first, but it becomes easier to understand once you know what each component does.
+
+### The request flow
+
+The consumer contract initiates the request by calling the VRF Coordinator:
+
+`s_vrfCoordinator.requestRandomWords(request);`
+
+The request contains the configuration needed by the Coordinator, including the subscription, key hash, confirmation count, callback gas limit, number of random words, and additional arguments.
+
+### The fulfillment flow
+
+The request and response happen separately.
+
+After the VRF request is processed, the Coordinator calls the consumer's inherited fulfillment entry point:
+
+VRF Coordinator -> rawFulfillRandomWords() -> fulfillRandomWords() -> Application logic
+
+`rawFulfillRandomWords()` belongs to the VRF integration layer provided by `VRFConsumerBaseV2Plus`. It verifies that the call comes from the configured Coordinator and forwards the result to the consumer's `fulfillRandomWords()` implementation. The Chainlink consumer pattern uses this separation so that application-specific logic does not have to implement the Coordinator validation itself.
+
+### The most important distinction
+
+The easiest way to remember the architecture is:
+
+REQUEST
+
+Consumer ----------------------> Coordinator
+          requestRandomWords()
+
+FULFILLMENT
+
+Coordinator ------------------------> Consumer
+                                      rawFulfillRandomWords() (the Coordinator calls this function in the consumer contract)
+                                                ->
+                                      fulfillRandomWords()
+
+The consumer requests randomness from the Coordinator.
+
+The Coodinator then works with Chainlink's VRF infrastructure to process the request and ultimately deliver the random values back to the consumer.
+
+The consumer then decides what those values mean within its own application.
+
+Consumer -> Coordinator -> VRF infrastructure -> Coordinator -> Consumer
+
+Once this request-and-fulfillment pattern is understood, the rest of the VRF v2.5 API becomes much easier to follow.
+
+
+The consumer
