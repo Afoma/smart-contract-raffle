@@ -703,25 +703,6 @@ is a base-constructor call. It tells Solidity to initialize the inherited `VRFCo
 
 The important conceptual point is that the consumer contract does not discover the Coordinator automatically. The deployed Coordinator address is provided when the consumer is constructed.
 
-### 3.3 Storing the request configuration
-
-These are the VRF-related state variables:
-
-```
-    uint16 private constant REQUEST_CONFIRMATIONS = 3;
-    uint32 private constant NUM_WORDS = 1;
-    uint256 private immutable i_entranceFee;
-    // @dev the duration of the lottery in seconds
-    uint256 private immutable i_interval;
-    bytes32 private immutable i_keyHash;
-    uint256 private immutable i_subscriptionId;
-    uint32 private immutable i_callbackGasLimit;
-```
-
-These values eventually become part of the request constructed in `performUpkeep()`.
-
-These variables store the configuration needed to construct a `RandomWordsRequest`. Section 2 explained what each request parameter means; here, we can see where those values live in the consumer contract.
-
 ### 3.2 Storing the VRF configuration
 
 The contract stores the configuration required to construct a VRF request:
