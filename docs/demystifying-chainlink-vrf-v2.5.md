@@ -828,7 +828,7 @@ the returned array contains one value, which the contract accesses with:
 
 The important separation is:
 
-**Chainlink VRF provides the verifiable random value. The consumer contract decides how to use that value in its own application logic.**
+Chainlink VRF provides the verifiable random value. The consumer contract decides how to use that value in its own application logic.
 
 In this contract, the random value is used to select an index from the stored addresses:
 
