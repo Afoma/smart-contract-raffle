@@ -673,7 +673,7 @@ import {VRFV2PlusClient} from "chainlink/src/v0.8/vrf/dev/libraries/VRFV2PlusCli
 `VRFConsumerBaseV2Plus` provides the base functionalityneeded for a contract to receive VRF responses.
 `VRFV2PlusClient` provides the RandomWordsRequest structure and helper functions used to construct a VRF v2.5 request.
 
-### 3.2 Inheriting from VRFConsumerBaseV2Plus
+### 3.1 Inheriting from VRFConsumerBaseV2Plus
 
 The contract inherits from VRFConsumerBaseV2Plus:
 
@@ -692,21 +692,14 @@ The Coordinator address is supplied when the contract is deployed:
         uint256 subscriptionId,
         uint32 callbackGasLimit
     ) VRFConsumerBaseV2Plus(_vrfCoordinator) {
-        i_entranceFee = entranceFee;
-        i_interval = interval;
-        i_keyHash = gasLane;
-        i_subscriptionId = subscriptionId;
-        i_callbackGasLimit = callbackGasLimit;
-        s_lastTimeStamp = block.timestamp;
-        s_raffleState = RaffleState.OPEN;
-    }
+
 ```
 
 The expression:
 
 VRFConsumerBaseV2Plus(_vrfCoordinator)
 
-is a base-constructor call. It tells Solidity to initialize the inherited VRFConsumerBaseV2Plus contract using _vrfCoordinator.
+is a base-constructor call. It tells Solidity to initialize the inherited `VRFConsumerBaseV2Plus` contract using `_vrfCoordinator`.
 
 The important conceptual point is that the consumer contract does not discover the Coordinator automatically. The deployed Coordinator address is provided when the consumer is constructed.
 
@@ -728,31 +721,6 @@ These are the VRF-related state variables:
 These values eventually become part of the request constructed in `performUpkeep()`.
 
 These variables store the configuration needed to construct a `RandomWordsRequest`. Section 2 explained what each request parameter means; here, we can see where those values live in the consumer contract.
-
-### Constructing the request
-
-```
-        VRFV2PlusClient.RandomWordsRequest memory request = VRFV2PlusClient.RandomWordsRequest
-        ({
-            keyHash: i_keyHash,
-            subId: i_subscriptionId,
-            requestConfirmations: REQUEST_CONFIRMATIONS,
-            callbackGasLimit: i_callbackGasLimit,
-            numWords: NUM_WORDS,
-            extraArgs: VRFV2PlusClient._argsToBytes(
-                // Set nativePayment to true to pay for VRF requests with Sepolia ETH instead of LINK
-                VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
-            )
-        });
-        s_vrfCoordinator.requestRandomWords(request);
-    }
-```
-
-The request struct does not generate randomness. It packages the configuration the Coordinator needs to process the randomness request.
-
-`s_vrfCoordinator.requestRandomWords(request);`
-
-This is important because the consumer needs to know which deployed VRF Coordinator it should communicate with.
 
 ### 3.2 Storing the VRF configuration
 
@@ -797,7 +765,7 @@ The request is constructed inside `performUpkeep()`:
 
 This creates a `RandomWordsRequest` containing the configuration the Coordinator needs to process the request.
 
-The request itself does **not** generate randomness. It packages the parameters for the request.
+The request struct does **not** generate randomness. It packages the configuration / parameters the Coordinator needs to process the randomness request.
 
 The next line sends that request to the Coordinator:
 
